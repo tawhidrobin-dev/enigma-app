@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Enigma Machine</title>
+<style>
+:root{--bg:#e4e0d2;--panel:#f3f0e6;--ink:#23271f;--mute:#6b6f5f;--line:#b9b49f;--brass:#8a6a1f;--lamp:#c98a00;--ok:#2f6b3a;--err:#a3321f;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c2119;--panel:#262c22;--ink:#e8e4d0;--mute:#9da088;--line:#454c3b;--brass:#d2ab4a;--lamp:#ffc83d;--ok:#8cc596;--err:#f0907e}}
+:root[data-theme="dark"]{--bg:#1c2119;--panel:#262c22;--ink:#e8e4d0;--mute:#9da088;--line:#454c3b;--brass:#d2ab4a;--lamp:#ffc83d;--ok:#8cc596;--err:#f0907e}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:2rem;margin:0 0 4px;letter-spacing:.02em}
+p.sub{margin:0 0 20px;color:var(--mute)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;margin-bottom:16px}
+h2{font-size:1.05rem;margin:0 0 12px;color:var(--brass)}
+label{display:block;font-size:.85rem;color:var(--mute);margin-bottom:4px}
+select,input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px}
+textarea{min-height:110px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+.rotors{display:flex;gap:12px;justify-content:center;margin:4px 0 8px}
+.win{width:64px;height:76px;border:2px solid var(--brass);border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;font:700 2.2rem ui-monospace,Menlo,Consolas,monospace;color:var(--lamp);transition:transform .12s}
+.win.tick{transform:translateY(-3px)}
+.cap{text-align:center;font-size:.85rem;color:var(--mute)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{font:inherit;padding:8px 14px;border:1px solid var(--brass);background:transparent;color:var(--ink);border-radius:4px;cursor:pointer}
+button:hover{background:var(--brass);color:var(--bg)}
+.out{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.25rem;letter-spacing:.14em;min-height:110px;padding:10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--lamp);word-break:break-word;white-space:pre-wrap}
+.msg{font-size:.9rem;margin-top:6px;min-height:1.3em}.err{color:var(--err)}.ok{color:var(--ok)}
+.keycode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.95rem;word-break:break-all}
+</style></head>
+<body><main>
+<h1>Enigma machine</h1>
+<p class="sub">Both people set the same day key. Type a message to encode it, then the other person types the coded text with the same key to decode it.</p>
+
+<section>
+<h2>Day key</h2>
+<div class="row" id="rotorSel"></div>
+<div class="row" id="ringSel"></div>
+<div class="row" id="posSel"></div>
+<label for="plug">Plugboard pairs (up to 10, like AB CD EF)</label>
+<input id="plug" value="AV BS CG DL FU HZ IN KM OW RX" autocomplete="off" spellcheck="false">
+<div class="msg" id="plugMsg"></div>
+<div class="btns">
+<button id="rand">Random day key</button>
+<button id="copyKey">Copy key</button>
+<button id="pasteKey">Load key from box</button>
+</div>
+<label for="keyBox" style="margin-top:12px">Day key code (share this with the receiver)</label>
+<input id="keyBox" class="keycode" spellcheck="false" autocomplete="off">
+<div class="msg" id="keyMsg"></div>
+</section>
+
+<section>
+<h2>Rotor windows after this message</h2>
+<div class="rotors" id="wins"></div>
+<div class="cap">Left, middle and right rotor</div>
+</section>
+
+<section>
+<h2>Message</h2>
+<label for="inp">Type or paste text (letters only are used)</label>
+<textarea id="inp" placeholder="Type a message to encode or decode"></textarea>
+<h2 style="margin-top:14px">Result</h2>
+<div class="out" id="out" aria-live="polite"></div>
+<div class="btns"><button id="copyOut">Copy result</button><button id="swap">Use result as new message</button></div>
+</section>
+</main>
+<script>
+const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const R=[["I","EKMFLGDQVZNTOWYHXUSPAIBRCJ","Q"],["II","AJDKSIRUXBLHWTMCQGZNPYFVOE","E"],["III","BDFHJLCPRTXVZNYEIWGAKMUSQO","V"],["IV","ESOVPZJAYQUIRHXLNFTGKDCMWB","J"],["V","VZBRGITYUPSDNHLXAWMJQOFECK","Z"]];
+const REF="YRUHQSLDPXNGOKMIEBFZCWVJAT";
+const $=id=>document.getElementById(id);
+const pos3=["Left","Middle","Right"];
+function mk(el,id,opts,val,lbl){const w=document.createElement("div");w.innerHTML=`<label for="${id}">${lbl}</label><select id="${id}"></select>`;el.appendChild(w);const s=w.querySelector("select");opts.forEach(o=>{const e=document.createElement("option");e.value=o[0];e.textContent=o[1];s.appendChild(e)});s.value=val;s.onchange=()=>{syncBox();run()}}
+const rotOpts=R.map((r,i)=>[i,r[0]]),num=[...Array(26)].map((_,i)=>[i,String(i+1).padStart(2,"0")+" ("+A[i]+")"]),letOpts=[...A].map((c,i)=>[i,c]);
+pos3.forEach((p,i)=>{mk($("rotorSel"),"rot"+i,rotOpts,[1,0,2][i]===undefined?i:[1,0,2][i],p+" rotor")});
+pos3.forEach((p,i)=>mk($("ringSel"),"ring"+i,num,[6,12,20][i],p+" ring"));
+pos3.forEach((p,i)=>mk($("posSel"),"pos"+i,letOpts,[16,5,12][i],p+" start"));
+$("rot0").value=1;$("rot1").value=3;$("rot2").value=4;
+
+function parsePlug(){const raw=$("plug").value.toUpperCase().replace(/[^A-Z ]/g," ").trim();const pairs=raw?raw.split(/\s+/):[];const map={};[...A].forEach(c=>map[c]=c);const seen=new Set();
+for(const p of pairs){if(p.length!==2)return{err:"Each pair needs exactly two letters: "+p};if(p[0]===p[1])return{err:"A letter can't pair with itself: "+p};if(seen.has(p[0])||seen.has(p[1]))return{err:"A letter is used twice: "+p};seen.add(p[0]);seen.add(p[1]);map[p[0]]=p[1];map[p[1]]=p[0]}
+if(pairs.length>10)return{err:"Use at most 10 pairs."};return{map,pairs}}
+
+function cfg(){return{rot:[0,1,2].map(i=>+$("rot"+i).value),ring:[0,1,2].map(i=>+$("ring"+i).value),pos:[0,1,2].map(i=>+$("pos"+i).value)}}
+function syncBox(){const c=cfg(),pl=parsePlug();$("keyBox").value=c.rot.map(i=>R[i][0]).join("-")+"/"+c.ring.map(n=>String(n+1).padStart(2,"0")).join("-")+"/"+c.pos.map(n=>A[n]).join("")+"/"+(pl.pairs?pl.pairs.join(" "):"")}
+function loadBox(){const m=$("keyBox").value.trim().toUpperCase().match(/^([IV]+)-([IV]+)-([IV]+)\/(\d\d)-(\d\d)-(\d\d)\/([A-Z]{3})\/?(.*)$/);
+const km=$("keyMsg");if(!m){km.className="msg err";km.textContent="That key code isn't valid. Example: II-IV-V/07-13-21/QFM/AB CD";return}
+const names=R.map(r=>r[0]);const rs=[m[1],m[2],m[3]].map(n=>names.indexOf(n));if(rs.includes(-1)||new Set(rs).size<3){km.className="msg err";km.textContent="Rotors must be three different ones from I to V.";return}
+const rings=[m[4],m[5],m[6]].map(n=>+n-1);if(rings.some(n=>n<0||n>25)){km.className="msg err";km.textContent="Ring settings must be 01 to 26.";return}
+rs.forEach((v,i)=>$("rot"+i).value=v);rings.forEach((v,i)=>$("ring"+i).value=v);[...m[7]].forEach((c,i)=>$("pos"+i).value=A.indexOf(c));$("plug").value=m[8].trim();km.className="msg ok";km.textContent="Key loaded.";run()}
+
+function enigma(text,c,plug){const pos=[...c.pos],out=[];const wr=c.rot.map(i=>R[i][1]),notch=c.rot.map(i=>A.indexOf(R[i][2]));
+const fwd=(x,k)=>{const s=(x+pos[k]-c.ring[k]+52)%26;return(A.indexOf(wr[k][s])-pos[k]+c.ring[k]+52)%26};
+const bwd=(x,k)=>{const s=(x+pos[k]-c.ring[k]+52)%26;return(wr[k].indexOf(A[s])-pos[k]+c.ring[k]+52)%26};
+for(const ch of text){
+if(pos[1]===notch[1]){pos[0]=(pos[0]+1)%26;pos[1]=(pos[1]+1)%26}else if(pos[2]===notch[2]){pos[1]=(pos[1]+1)%26}
+pos[2]=(pos[2]+1)%26;
+let x=A.indexOf(plug[ch]);x=fwd(x,2);x=fwd(x,1);x=fwd(x,0);x=A.indexOf(REF[x]);x=bwd(x,0);x=bwd(x,1);x=bwd(x,2);out.push(plug[A[x]])}
+return{text:out.join(""),pos}}
+
+function run(){const pl=parsePlug();const pm=$("plugMsg");
+if(pl.err){pm.className="msg err";pm.textContent=pl.err;$("out").textContent="";return}
+pm.className="msg";pm.textContent="";const c=cfg();
+if(new Set(c.rot).size<3){pm.className="msg err";pm.textContent="Pick three different rotors.";$("out").textContent="";return}
+const t=$("inp").value.toUpperCase().replace(/[^A-Z]/g,"");const r=enigma(t,c,pl.map);
+$("out").textContent=r.text.replace(/(.{5})(?=.)/g,"$1 ");
+const w=$("wins");w.innerHTML="";r.pos.forEach((p,i)=>{const d=document.createElement("div");d.className="win";d.textContent=A[p];w.appendChild(d)});
+if(t.length){[...w.children].forEach(d=>{d.classList.add("tick");setTimeout(()=>d.classList.remove("tick"),130)})}
+syncBox()}
+
+$("inp").oninput=run;$("plug").oninput=run;
+$("pasteKey").onclick=loadBox;
+$("keyBox").onkeydown=e=>{if(e.key==="Enter")loadBox()};
+$("rand").onclick=()=>{const p=[0,1,2,3,4].sort(()=>Math.random()-.5).slice(0,3);p.forEach((v,i)=>$("rot"+i).value=v);
+for(let i=0;i<3;i++){$("ring"+i).value=Math.floor(Math.random()*26);$("pos"+i).value=Math.floor(Math.random()*26)}
+const l=[...A].sort(()=>Math.random()-.5),pr=[];for(let i=0;i<20;i+=2)pr.push(l[i]+l[i+1]);$("plug").value=pr.join(" ");
+$("keyMsg").textContent="";run()};
+async function copy(txt,el,msg){try{await navigator.clipboard.writeText(txt);el.className="msg ok";el.textContent=msg}catch(e){el.className="msg";el.textContent="Copy didn't work here. Select the text and copy it by hand."}}
+$("copyKey").onclick=()=>copy($("keyBox").value,$("keyMsg"),"Key copied.");
+$("copyOut").onclick=()=>copy($("out").textContent,$("keyMsg"),"Result copied.");
+$("swap").onclick=()=>{$("inp").value=$("out").textContent;run()};
+run();
+</script></body></html>
